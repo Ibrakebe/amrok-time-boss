@@ -400,10 +400,10 @@ function EmployeeDialog({
   const save = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.rpc("admin_save_employee", {
-        p_id: employee?.id ?? null,
+        p_id: (employee?.id ?? null) as unknown as string,
         p_name: name,
         p_position: position,
-        p_pin: pin ? pin : null,
+        p_pin: (pin ? pin : null) as unknown as string,
         p_active: active,
       });
       if (error) throw error;
