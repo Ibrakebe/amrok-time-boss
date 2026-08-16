@@ -162,7 +162,7 @@ function KioskPage() {
                     }}
                     className={`flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
                       mode === tab.id
-                        ? "bg-card text-foreground shadow-sm"
+                        ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
