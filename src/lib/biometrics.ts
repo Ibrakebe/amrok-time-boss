@@ -4,7 +4,7 @@
 
 const STORE_KEY = "amrok.biometrics.v1";
 
-type BioLink = { credentialId: string; pin: string; label: string };
+type BioLink = { credentialId: string; pin: string; label: string; employeeId?: string | undefined };
 
 function b64url(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
@@ -53,8 +53,16 @@ export function removeAllBiometricLinks() {
   window.localStorage.removeItem(STORE_KEY);
 }
 
+export function hasBiometricForEmployee(employeeId: string) {
+  return listBiometricLinks().some((l) => l.employeeId === employeeId);
+}
+
+export function removeBiometricForEmployee(employeeId: string) {
+  saveLinks(listBiometricLinks().filter((l) => l.employeeId !== employeeId));
+}
+
 /** Enrôle une empreinte sur cet appareil et l'associe à un code PIN. */
-export async function enrollBiometric(pin: string, label: string) {
+export async function enrollBiometric(pin: string, label: string, employeeId?: string) {
   const credential = (await navigator.credentials.create({
     publicKey: {
       challenge: randomBytes(32),
@@ -77,8 +85,10 @@ export async function enrollBiometric(pin: string, label: string) {
   if (!credential) throw new Error("cancelled");
 
   const credentialId = b64url(credential.rawId);
-  const links = listBiometricLinks().filter((l) => l.credentialId !== credentialId);
-  links.push({ credentialId, pin, label });
+  const links = listBiometricLinks().filter(
+    (l) => l.credentialId !== credentialId && (!employeeId || l.employeeId !== employeeId),
+  );
+  links.push({ credentialId, pin, label, employeeId });
   saveLinks(links);
   return credentialId;
 }

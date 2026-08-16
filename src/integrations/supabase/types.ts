@@ -22,6 +22,7 @@ export type Database = {
           is_active: boolean
           pin_hash: string
           position: string
+          site: string
         }
         Insert: {
           created_at?: string
@@ -30,6 +31,7 @@ export type Database = {
           is_active?: boolean
           pin_hash: string
           position?: string
+          site?: string
         }
         Update: {
           created_at?: string
@@ -38,6 +40,7 @@ export type Database = {
           is_active?: boolean
           pin_hash?: string
           position?: string
+          site?: string
         }
         Relationships: []
       }
@@ -96,16 +99,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      admin_save_employee: {
-        Args: {
-          p_active: boolean
-          p_id: string
-          p_name: string
-          p_pin: string
-          p_position: string
-        }
-        Returns: string
-      }
+      admin_save_employee:
+        | {
+            Args: {
+              p_active: boolean
+              p_id: string
+              p_name: string
+              p_pin: string
+              p_position: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_active: boolean
+              p_id: string
+              p_name: string
+              p_pin: string
+              p_position: string
+              p_site?: string
+            }
+            Returns: string
+          }
       claim_admin: { Args: never; Returns: boolean }
       has_role: {
         Args: {
