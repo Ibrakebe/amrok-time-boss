@@ -94,7 +94,7 @@ function minutesOf(entry: Entry) {
   return Math.max(0, Math.round((+new Date(entry.clock_out) - +new Date(entry.clock_in)) / 60000));
 }
 
-function SiteBadge({ site }: { site?: string | null }) {
+function SiteBadge({ site }: { site?: string | null | undefined }) {
   const isResto = site === "Le Tiafka Resto";
   return (
     <Badge
