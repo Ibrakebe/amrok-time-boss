@@ -8,20 +8,13 @@ import {
   LogOut,
   ScanBarcode,
   ShieldCheck,
-  Trash2,
   XCircle,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  biometricsSupported,
-  enrollBiometric,
-  listBiometricLinks,
-  removeAllBiometricLinks,
-  verifyBiometric,
-} from "@/lib/biometrics";
+import { biometricsSupported, listBiometricLinks, verifyBiometric } from "@/lib/biometrics";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/")({
@@ -46,7 +39,14 @@ export const Route = createFileRoute("/")({
 });
 
 type PunchResult =
-  | { ok: true; action: "in" | "out"; name: string; at: string; since?: string }
+  | {
+      ok: true;
+      action: "in" | "out";
+      name: string;
+      at: string;
+      since?: string;
+      site?: string;
+    }
   | { ok: false; error: string };
 
 type Mode = "keypad" | "barcode" | "fingerprint";
@@ -336,9 +336,6 @@ function FingerprintMode({
 }) {
   const [supported, setSupported] = useState(true);
   const [count, setCount] = useState(0);
-  const [enrolling, setEnrolling] = useState(false);
-  const [enrollPin, setEnrollPin] = useState("");
-  const [enrollName, setEnrollName] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
@@ -357,30 +354,9 @@ function FingerprintMode({
       const code = error instanceof Error ? error.message : "error";
       setMessage(
         code === "no_enrollment"
-          ? "Aucune empreinte enregistrée sur cette borne."
+          ? "Aucune empreinte enregistrée sur cette borne. La direction doit l'enrôler depuis la fiche de l'employé."
           : "Empreinte non reconnue ou annulée.",
       );
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const enroll = async () => {
-    if (enrollPin.length < 4) {
-      setMessage("Saisissez d'abord le code PIN de l'employé (4 chiffres minimum).");
-      return;
-    }
-    setMessage(null);
-    setWorking(true);
-    try {
-      await enrollBiometric(enrollPin, enrollName.trim() || "Employé");
-      setCount(listBiometricLinks().length);
-      setEnrolling(false);
-      setEnrollPin("");
-      setEnrollName("");
-      setMessage("Empreinte enregistrée sur cette borne.");
-    } catch {
-      setMessage("Enregistrement de l'empreinte annulé ou impossible.");
     } finally {
       setWorking(false);
     }
@@ -413,73 +389,23 @@ function FingerprintMode({
       <h1 className="mt-4 font-display text-lg font-semibold">Posez votre doigt</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         {count > 0
-          ? `${count} empreinte${count > 1 ? "s" : ""} enregistrée${count > 1 ? "s" : ""} sur cette borne.`
-          : "Aucune empreinte enregistrée sur cette borne."}
+          ? `${count} empreinte${count > 1 ? "s" : ""} enrôlée${count > 1 ? "s" : ""} sur cette borne.`
+          : "Aucune empreinte enrôlée sur cette borne."}
       </p>
 
       {message && <p className="mt-3 text-sm font-medium text-accent-foreground">{message}</p>}
 
-      {enrolling ? (
-        <div className="mt-5 space-y-3 rounded-2xl border border-border p-4 text-left">
-          <p className="font-display text-sm font-semibold">Associer une empreinte</p>
-          <Input
-            value={enrollName}
-            onChange={(e) => setEnrollName(e.target.value)}
-            placeholder="Nom de l'employé"
-            className="h-11 rounded-xl"
-          />
-          <Input
-            value={enrollPin}
-            onChange={(e) => setEnrollPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            inputMode="numeric"
-            placeholder="Code PIN de l'employé"
-            className="h-11 rounded-xl tracking-widest"
-          />
-          <div className="flex gap-2">
-            <Button onClick={enroll} disabled={working} className="h-11 flex-1 rounded-xl">
-              Enregistrer l'empreinte
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setEnrolling(false)}
-              className="h-11 rounded-xl"
-            >
-              Annuler
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="mt-5 flex flex-col gap-2">
-          <Button
-            size="lg"
-            onClick={scan}
-            disabled={busy || working}
-            className="h-14 w-full rounded-2xl font-display text-base font-semibold"
-          >
-            {busy || working ? "Vérification…" : "Pointer avec l'empreinte"}
-          </Button>
-          <Button variant="outline" onClick={() => setEnrolling(true)} className="h-11 rounded-xl">
-            Associer une nouvelle empreinte
-          </Button>
-          {count > 0 && (
-            <Button
-              variant="ghost"
-              onClick={() => {
-                removeAllBiometricLinks();
-                setCount(0);
-                setMessage("Empreintes supprimées de cette borne.");
-              }}
-              className="h-10 rounded-xl text-xs text-muted-foreground"
-            >
-              <Trash2 className="mr-1 size-3.5" />
-              Effacer les empreintes de cette borne
-            </Button>
-          )}
-        </div>
-      )}
+      <Button
+        size="lg"
+        onClick={scan}
+        disabled={busy || working}
+        className="mt-5 h-14 w-full rounded-2xl font-display text-base font-semibold"
+      >
+        {busy || working ? "Vérification…" : "Pointer avec l'empreinte"}
+      </Button>
       <p className="mt-3 text-xs text-muted-foreground">
-        L'empreinte reste dans le lecteur de l'appareil ; seule sa correspondance avec le code PIN
-        est conservée localement sur cette borne.
+        L'enrôlement des empreintes se fait uniquement depuis l'espace direction, sur la fiche de
+        l'employé.
       </p>
     </div>
   );
@@ -516,6 +442,7 @@ function ResultCard({ result }: { result: PunchResult }) {
         {isIn ? "Bienvenue" : "Bonne fin de journée"}
       </p>
       <h2 className="font-display text-2xl font-bold">{result.name}</h2>
+      {result.site && <p className="mt-1 text-xs text-muted-foreground">{result.site}</p>}
       <p className="mt-3 text-sm">
         {isIn ? "Arrivée enregistrée à" : "Départ enregistré à"}{" "}
         <span className="font-semibold">{formatTime(result.at)}</span>
