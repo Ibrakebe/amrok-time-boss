@@ -1,9 +1,27 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Delete, LogIn, LogOut, ShieldCheck, XCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Delete,
+  Fingerprint,
+  Grid3x3,
+  LogIn,
+  LogOut,
+  ScanBarcode,
+  ShieldCheck,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  biometricsSupported,
+  enrollBiometric,
+  listBiometricLinks,
+  removeAllBiometricLinks,
+  verifyBiometric,
+} from "@/lib/biometrics";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/")({
@@ -13,13 +31,15 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Borne de pointage Amrok Supermarché : saisissez votre code PIN pour enregistrer votre arrivée ou votre départ.",
+          "Borne de pointage Amrok Supermarché : code PIN, badge code-barres ou empreinte digitale pour enregistrer arrivée et départ.",
       },
       { property: "og:title", content: "Pointage employés — Amrok Supermarché" },
       {
         property: "og:description",
-        content: "Enregistrez votre arrivée ou votre départ avec votre code PIN personnel.",
+        content: "Pointez avec votre code PIN, votre badge code-barres ou votre empreinte digitale.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: KioskPage,
@@ -28,6 +48,8 @@ export const Route = createFileRoute("/")({
 type PunchResult =
   | { ok: true; action: "in" | "out"; name: string; at: string; since?: string }
   | { ok: false; error: string };
+
+type Mode = "keypad" | "barcode" | "fingerprint";
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -39,6 +61,7 @@ function durationLabel(from: string, to: string) {
 }
 
 function KioskPage() {
+  const [mode, setMode] = useState<Mode>("keypad");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PunchResult | null>(null);
@@ -56,23 +79,22 @@ function KioskPage() {
     return () => clearTimeout(t);
   }, [result]);
 
+  const punch = useCallback(async (code: string) => {
+    if (code.length < 4) {
+      setResult({ ok: false, error: "invalid" });
+      return;
+    }
+    setBusy(true);
+    const { data, error } = await supabase.rpc("punch_pin", { p_pin: code });
+    setBusy(false);
+    setPin("");
+    setResult(error ? { ok: false, error: "server" } : (data as unknown as PunchResult));
+  }, []);
+
   const press = (digit: string) => {
     if (busy || pin.length >= 6) return;
     setResult(null);
     setPin((p) => p + digit);
-  };
-
-  const submit = async () => {
-    if (pin.length < 4 || busy) return;
-    setBusy(true);
-    const { data, error } = await supabase.rpc("punch_pin", { p_pin: pin });
-    setBusy(false);
-    setPin("");
-    if (error) {
-      setResult({ ok: false, error: "server" });
-      return;
-    }
-    setResult(data as unknown as PunchResult);
   };
 
   return (
@@ -123,66 +145,44 @@ function KioskPage() {
             <ResultCard result={result} />
           ) : (
             <>
-              <h1 className="text-center font-display text-lg font-semibold">
-                Entrez votre code PIN
-              </h1>
-              <div className="mt-4 flex justify-center gap-2.5">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <span
-                    key={i}
-                    className={`size-3.5 rounded-full transition-colors ${
-                      i < pin.length ? "bg-primary" : "bg-muted"
-                    }`}
-                  />
-                ))}
-              </div>
-
-              <div className="mt-6 grid grid-cols-3 gap-3">
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+              <div className="mb-5 grid grid-cols-3 gap-1.5 rounded-2xl bg-muted p-1.5">
+                {(
+                  [
+                    { id: "keypad", label: "Clavier", icon: Grid3x3 },
+                    { id: "barcode", label: "Code-barres", icon: ScanBarcode },
+                    { id: "fingerprint", label: "Empreinte", icon: Fingerprint },
+                  ] as const
+                ).map((tab) => (
                   <button
-                    key={d}
+                    key={tab.id}
                     type="button"
-                    onClick={() => press(d)}
-                    className="keypad-key active:keypad-key-active h-16"
+                    onClick={() => {
+                      setMode(tab.id);
+                      setPin("");
+                    }}
+                    className={`flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
+                      mode === tab.id
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    {d}
+                    <tab.icon className="size-4" />
+                    {tab.label}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setPin((p) => p.slice(0, -1))}
-                  aria-label="Effacer un chiffre"
-                  className="keypad-key active:keypad-key-active flex h-16 items-center justify-center text-muted-foreground"
-                >
-                  <Delete className="size-6" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => press("0")}
-                  className="keypad-key active:keypad-key-active h-16"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPin("")}
-                  className="keypad-key active:keypad-key-active h-16 text-base text-muted-foreground"
-                >
-                  C
-                </button>
               </div>
 
-              <Button
-                size="lg"
-                onClick={submit}
-                disabled={pin.length < 4 || busy}
-                className="mt-4 h-14 w-full rounded-2xl font-display text-base font-semibold"
-              >
-                {busy ? "Enregistrement…" : "Pointer"}
-              </Button>
-              <p className="mt-3 text-center text-xs text-muted-foreground">
-                Le système enregistre automatiquement une arrivée, puis un départ.
-              </p>
+              {mode === "keypad" && (
+                <KeypadMode
+                  pin={pin}
+                  busy={busy}
+                  press={press}
+                  setPin={setPin}
+                  onSubmit={() => punch(pin)}
+                />
+              )}
+              {mode === "barcode" && <BarcodeMode busy={busy} onScan={punch} />}
+              {mode === "fingerprint" && <FingerprintMode busy={busy} onVerified={punch} />}
             </>
           )}
         </div>
@@ -191,11 +191,305 @@ function KioskPage() {
   );
 }
 
+function KeypadMode({
+  pin,
+  busy,
+  press,
+  setPin,
+  onSubmit,
+}: {
+  pin: string;
+  busy: boolean;
+  press: (d: string) => void;
+  setPin: (updater: (p: string) => string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <>
+      <h1 className="text-center font-display text-lg font-semibold">Entrez votre code PIN</h1>
+      <div className="mt-4 flex justify-center gap-2.5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <span
+            key={i}
+            className={`size-3.5 rounded-full transition-colors ${
+              i < pin.length ? "bg-primary" : "bg-muted"
+            }`}
+          />
+        ))}
+      </div>
+
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => press(d)}
+            className="keypad-key active:keypad-key-active h-16"
+          >
+            {d}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => setPin((p) => p.slice(0, -1))}
+          aria-label="Effacer un chiffre"
+          className="keypad-key active:keypad-key-active flex h-16 items-center justify-center text-muted-foreground"
+        >
+          <Delete className="size-6" />
+        </button>
+        <button
+          type="button"
+          onClick={() => press("0")}
+          className="keypad-key active:keypad-key-active h-16"
+        >
+          0
+        </button>
+        <button
+          type="button"
+          onClick={() => setPin(() => "")}
+          className="keypad-key active:keypad-key-active h-16 text-base text-muted-foreground"
+        >
+          C
+        </button>
+      </div>
+
+      <Button
+        size="lg"
+        onClick={onSubmit}
+        disabled={pin.length < 4 || busy}
+        className="mt-4 h-14 w-full rounded-2xl font-display text-base font-semibold"
+      >
+        {busy ? "Enregistrement…" : "Pointer"}
+      </Button>
+      <p className="mt-3 text-center text-xs text-muted-foreground">
+        Le système enregistre automatiquement une arrivée, puis un départ.
+      </p>
+    </>
+  );
+}
+
+function BarcodeMode({ busy, onScan }: { busy: boolean; onScan: (code: string) => void }) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const send = () => {
+    const code = value.trim();
+    setValue("");
+    if (code) onScan(code);
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="text-center">
+      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-accent/20 text-accent-foreground">
+        <ScanBarcode className="size-8" />
+      </div>
+      <h1 className="mt-4 font-display text-lg font-semibold">Scannez votre badge</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Présentez le code-barres devant le lecteur : le pointage se fait automatiquement.
+      </p>
+
+      <Input
+        ref={inputRef}
+        value={value}
+        inputMode="none"
+        autoComplete="off"
+        aria-label="Code-barres du badge"
+        placeholder="En attente du scan…"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            send();
+          }
+        }}
+        onBlur={() => inputRef.current?.focus()}
+        className="mt-5 h-14 rounded-2xl text-center font-display text-xl tracking-[0.3em]"
+      />
+
+      <Button
+        size="lg"
+        onClick={send}
+        disabled={value.trim().length < 4 || busy}
+        className="mt-4 h-14 w-full rounded-2xl font-display text-base font-semibold"
+      >
+        {busy ? "Enregistrement…" : "Valider le badge"}
+      </Button>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Le badge doit contenir le code PIN de l'employé. La plupart des lecteurs USB ajoutent
+        automatiquement une validation en fin de scan.
+      </p>
+    </div>
+  );
+}
+
+function FingerprintMode({
+  busy,
+  onVerified,
+}: {
+  busy: boolean;
+  onVerified: (pin: string) => void;
+}) {
+  const [supported, setSupported] = useState(true);
+  const [count, setCount] = useState(0);
+  const [enrolling, setEnrolling] = useState(false);
+  const [enrollPin, setEnrollPin] = useState("");
+  const [enrollName, setEnrollName] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    setSupported(biometricsSupported());
+    setCount(listBiometricLinks().length);
+  }, []);
+
+  const scan = async () => {
+    setMessage(null);
+    setWorking(true);
+    try {
+      const { pin } = await verifyBiometric();
+      onVerified(pin);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "error";
+      setMessage(
+        code === "no_enrollment"
+          ? "Aucune empreinte enregistrée sur cette borne."
+          : "Empreinte non reconnue ou annulée.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const enroll = async () => {
+    if (enrollPin.length < 4) {
+      setMessage("Saisissez d'abord le code PIN de l'employé (4 chiffres minimum).");
+      return;
+    }
+    setMessage(null);
+    setWorking(true);
+    try {
+      await enrollBiometric(enrollPin, enrollName.trim() || "Employé");
+      setCount(listBiometricLinks().length);
+      setEnrolling(false);
+      setEnrollPin("");
+      setEnrollName("");
+      setMessage("Empreinte enregistrée sur cette borne.");
+    } catch {
+      setMessage("Enregistrement de l'empreinte annulé ou impossible.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  if (!supported) {
+    return (
+      <div className="py-6 text-center">
+        <Fingerprint className="mx-auto size-12 text-muted-foreground" />
+        <h1 className="mt-4 font-display text-lg font-semibold">Empreinte indisponible</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Cet appareil ou ce navigateur ne prend pas en charge le lecteur d'empreinte. Utilisez le
+          clavier ou le badge code-barres.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="text-center">
+      <button
+        type="button"
+        onClick={scan}
+        disabled={busy || working}
+        className="mx-auto flex size-24 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform active:scale-95 disabled:opacity-60"
+        aria-label="Pointer avec l'empreinte digitale"
+      >
+        <Fingerprint className="size-12" />
+      </button>
+      <h1 className="mt-4 font-display text-lg font-semibold">Posez votre doigt</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {count > 0
+          ? `${count} empreinte${count > 1 ? "s" : ""} enregistrée${count > 1 ? "s" : ""} sur cette borne.`
+          : "Aucune empreinte enregistrée sur cette borne."}
+      </p>
+
+      {message && <p className="mt-3 text-sm font-medium text-accent-foreground">{message}</p>}
+
+      {enrolling ? (
+        <div className="mt-5 space-y-3 rounded-2xl border border-border p-4 text-left">
+          <p className="font-display text-sm font-semibold">Associer une empreinte</p>
+          <Input
+            value={enrollName}
+            onChange={(e) => setEnrollName(e.target.value)}
+            placeholder="Nom de l'employé"
+            className="h-11 rounded-xl"
+          />
+          <Input
+            value={enrollPin}
+            onChange={(e) => setEnrollPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            placeholder="Code PIN de l'employé"
+            className="h-11 rounded-xl tracking-widest"
+          />
+          <div className="flex gap-2">
+            <Button onClick={enroll} disabled={working} className="h-11 flex-1 rounded-xl">
+              Enregistrer l'empreinte
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setEnrolling(false)}
+              className="h-11 rounded-xl"
+            >
+              Annuler
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-col gap-2">
+          <Button
+            size="lg"
+            onClick={scan}
+            disabled={busy || working}
+            className="h-14 w-full rounded-2xl font-display text-base font-semibold"
+          >
+            {busy || working ? "Vérification…" : "Pointer avec l'empreinte"}
+          </Button>
+          <Button variant="outline" onClick={() => setEnrolling(true)} className="h-11 rounded-xl">
+            Associer une nouvelle empreinte
+          </Button>
+          {count > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                removeAllBiometricLinks();
+                setCount(0);
+                setMessage("Empreintes supprimées de cette borne.");
+              }}
+              className="h-10 rounded-xl text-xs text-muted-foreground"
+            >
+              <Trash2 className="mr-1 size-3.5" />
+              Effacer les empreintes de cette borne
+            </Button>
+          )}
+        </div>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">
+        L'empreinte reste dans le lecteur de l'appareil ; seule sa correspondance avec le code PIN
+        est conservée localement sur cette borne.
+      </p>
+    </div>
+  );
+}
+
 function ResultCard({ result }: { result: PunchResult }) {
   if (!result.ok) {
     const message =
       result.error === "not_found"
-        ? "Code PIN inconnu ou compte désactivé."
+        ? "Code PIN ou badge inconnu, ou compte désactivé."
         : result.error === "invalid"
           ? "Le code doit contenir au moins 4 chiffres."
           : "Erreur de connexion, réessayez.";
