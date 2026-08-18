@@ -199,7 +199,9 @@ function KioskPage() {
                 />
               )}
               {mode === "barcode" && <BarcodeMode busy={busy} onScan={punch} />}
-              {mode === "fingerprint" && <FingerprintMode busy={busy} onVerified={punch} />}
+              {mode === "fingerprint" && (
+                <FingerprintMode busy={busy} onVerified={punchCredential} />
+              )}
             </>
           )}
         </div>
@@ -349,7 +351,7 @@ function FingerprintMode({
   onVerified,
 }: {
   busy: boolean;
-  onVerified: (pin: string) => void;
+  onVerified: (credentialId: string) => void;
 }) {
   const [supported, setSupported] = useState(true);
   const [count, setCount] = useState(0);
@@ -358,15 +360,17 @@ function FingerprintMode({
 
   useEffect(() => {
     setSupported(biometricsSupported());
-    setCount(listBiometricLinks().length);
+    fetchBiometricCredentialIds()
+      .then((ids) => setCount(ids.length))
+      .catch(() => setCount(0));
   }, []);
 
   const scan = async () => {
     setMessage(null);
     setWorking(true);
     try {
-      const { pin } = await verifyBiometric();
-      onVerified(pin);
+      const credentialId = await verifyBiometric();
+      onVerified(credentialId);
     } catch (error) {
       const code = error instanceof Error ? error.message : "error";
       setMessage(
