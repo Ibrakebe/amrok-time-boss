@@ -503,12 +503,19 @@ function EmployeeDialog({
   const [active, setActive] = useState(employee?.is_active ?? true);
   const [enrollBio, setEnrollBio] = useState(false);
   const [bioSupported, setBioSupported] = useState(false);
-  const [bioEnrolled, setBioEnrolled] = useState(false);
+  const [bioCount, setBioCount] = useState(0);
+  const bioEnrolled = bioCount > 0;
 
   useEffect(() => {
     if (!open) return;
     setBioSupported(biometricsSupported());
-    setBioEnrolled(employee ? hasBiometricForEmployee(employee.id) : false);
+    if (!employee) {
+      setBioCount(0);
+      return;
+    }
+    countBiometricsForEmployee(employee.id)
+      .then(setBioCount)
+      .catch(() => setBioCount(0));
   }, [open, employee]);
 
   const save = useMutation({
@@ -524,8 +531,8 @@ function EmployeeDialog({
       if (error) throw error;
 
       const employeeId = (data as unknown as string) ?? employee?.id;
-      if (enrollBio && pin.length >= 4 && employeeId) {
-        await enrollBiometric(pin, `${name} · ${site}`, employeeId);
+      if (enrollBio && employeeId) {
+        await enrollBiometric(employeeId, `${name} · ${site}`);
       }
     },
     onSuccess: () => {
