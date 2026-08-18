@@ -37,10 +37,17 @@ import {
 } from "@/components/ui/dialog";
 import {
   biometricsSupported,
+  countBiometricsForEmployee,
   enrollBiometric,
-  hasBiometricForEmployee,
-  removeBiometricForEmployee,
+  removeBiometricsForEmployee,
 } from "@/lib/biometrics";
+import {
+  formatDate as dayLabel,
+  formatTime as hhmm,
+  hoursLabel,
+  localDay,
+  minutesBetween,
+} from "@/lib/time";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/_authenticated/direction")({
@@ -81,17 +88,11 @@ type Entry = {
   employees: { full_name: string; position: string; site: string } | null;
 };
 
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
-const hhmm = (iso: string) =>
-  new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-const dayLabel = (iso: string) =>
-  new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-const hoursLabel = (mins: number) =>
-  `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`;
+const isoDay = (d: Date) => localDay(d);
 
 function minutesOf(entry: Entry) {
   if (!entry.clock_out) return 0;
-  return Math.max(0, Math.round((+new Date(entry.clock_out) - +new Date(entry.clock_in)) / 60000));
+  return minutesBetween(entry.clock_in, entry.clock_out);
 }
 
 function SiteBadge({ site }: { site?: string | null | undefined }) {
@@ -502,12 +503,19 @@ function EmployeeDialog({
   const [active, setActive] = useState(employee?.is_active ?? true);
   const [enrollBio, setEnrollBio] = useState(false);
   const [bioSupported, setBioSupported] = useState(false);
-  const [bioEnrolled, setBioEnrolled] = useState(false);
+  const [bioCount, setBioCount] = useState(0);
+  const bioEnrolled = bioCount > 0;
 
   useEffect(() => {
     if (!open) return;
     setBioSupported(biometricsSupported());
-    setBioEnrolled(employee ? hasBiometricForEmployee(employee.id) : false);
+    if (!employee) {
+      setBioCount(0);
+      return;
+    }
+    countBiometricsForEmployee(employee.id)
+      .then(setBioCount)
+      .catch(() => setBioCount(0));
   }, [open, employee]);
 
   const save = useMutation({
@@ -523,8 +531,8 @@ function EmployeeDialog({
       if (error) throw error;
 
       const employeeId = (data as unknown as string) ?? employee?.id;
-      if (enrollBio && pin.length >= 4 && employeeId) {
-        await enrollBiometric(pin, `${name} · ${site}`, employeeId);
+      if (enrollBio && employeeId) {
+        await enrollBiometric(employeeId, `${name} · ${site}`);
       }
     },
     onSuccess: () => {
@@ -612,8 +620,8 @@ function EmployeeDialog({
                 </Label>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {bioEnrolled
-                    ? "Empreinte enrôlée sur cet appareil."
-                    : "Enrôler l'empreinte sur cet appareil de pointage."}
+                    ? `${bioCount} empreinte(s) enregistrée(s) en base pour cet employé.`
+                    : "Enrôler l'empreinte de l'employé sur cette borne (enregistrée en base)."}
                 </p>
               </div>
               <Switch
@@ -628,10 +636,9 @@ function EmployeeDialog({
                 Cet appareil ne dispose pas de lecteur d'empreinte compatible.
               </p>
             )}
-            {bioSupported && enrollBio && pin.length < 4 && (
+            {bioSupported && enrollBio && (
               <p className="text-xs text-muted-foreground">
-                Saisissez le code PIN ci-dessus : l'empreinte y sera associée lors de
-                l'enregistrement.
+                L'employé devra poser son doigt sur cet appareil lors de l'enregistrement.
               </p>
             )}
             {bioEnrolled && employee && (
@@ -639,13 +646,19 @@ function EmployeeDialog({
                 type="button"
                 variant="ghost"
                 className="h-9 w-full rounded-xl text-xs text-muted-foreground"
-                onClick={() => {
-                  removeBiometricForEmployee(employee.id);
-                  setBioEnrolled(false);
-                  toast.success("Empreinte retirée de cet appareil");
+                onClick={async () => {
+                  try {
+                    await removeBiometricsForEmployee(employee.id);
+                    setBioCount(0);
+                    toast.success("Empreintes supprimées");
+                  } catch (error) {
+                    toast.error("Suppression impossible", {
+                      description: error instanceof Error ? error.message : undefined,
+                    });
+                  }
                 }}
               >
-                <Trash2 className="mr-1 size-3.5" /> Retirer l'empreinte de cet appareil
+                <Trash2 className="mr-1 size-3.5" /> Supprimer les empreintes de cet employé
               </Button>
             )}
           </div>

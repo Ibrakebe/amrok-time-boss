@@ -14,7 +14,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { biometricsSupported, listBiometricLinks, verifyBiometric } from "@/lib/biometrics";
+import {
+  biometricsSupported,
+  fetchBiometricCredentialIds,
+  verifyBiometric,
+} from "@/lib/biometrics";
+import { APP_TIME_ZONE, formatTime, hoursLabel, minutesBetween } from "@/lib/time";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/")({
@@ -51,14 +56,10 @@ type PunchResult =
 
 type Mode = "keypad" | "barcode" | "fingerprint";
 
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+function durationLabel(from: string, to: string) {
+  return hoursLabel(minutesBetween(from, to));
 }
 
-function durationLabel(from: string, to: string) {
-  const mins = Math.max(0, Math.round((+new Date(to) - +new Date(from)) / 60000));
-  return `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`;
-}
 
 function KioskPage() {
   const [mode, setMode] = useState<Mode>("keypad");
@@ -88,6 +89,15 @@ function KioskPage() {
     const { data, error } = await supabase.rpc("punch_pin", { p_pin: code });
     setBusy(false);
     setPin("");
+    setResult(error ? { ok: false, error: "server" } : (data as unknown as PunchResult));
+  }, []);
+
+  const punchCredential = useCallback(async (credentialId: string) => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc("punch_credential", {
+      p_credential_id: credentialId,
+    });
+    setBusy(false);
     setResult(error ? { ok: false, error: "server" } : (data as unknown as PunchResult));
   }, []);
 
@@ -124,7 +134,13 @@ function KioskPage() {
         </div>
         <div className="mx-auto mt-8 max-w-2xl text-center">
           <p className="font-display text-5xl font-extrabold tabular-nums">
-            {now ? now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "--:--"}
+            {now
+              ? now.toLocaleTimeString("fr-FR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  timeZone: APP_TIME_ZONE,
+                })
+              : "--:--"}
           </p>
           <p className="mt-1 text-sm opacity-80">
             {now
@@ -133,6 +149,7 @@ function KioskPage() {
                   day: "numeric",
                   month: "long",
                   year: "numeric",
+                  timeZone: APP_TIME_ZONE,
                 })
               : ""}
           </p>
@@ -182,7 +199,9 @@ function KioskPage() {
                 />
               )}
               {mode === "barcode" && <BarcodeMode busy={busy} onScan={punch} />}
-              {mode === "fingerprint" && <FingerprintMode busy={busy} onVerified={punch} />}
+              {mode === "fingerprint" && (
+                <FingerprintMode busy={busy} onVerified={punchCredential} />
+              )}
             </>
           )}
         </div>
@@ -332,7 +351,7 @@ function FingerprintMode({
   onVerified,
 }: {
   busy: boolean;
-  onVerified: (pin: string) => void;
+  onVerified: (credentialId: string) => void;
 }) {
   const [supported, setSupported] = useState(true);
   const [count, setCount] = useState(0);
@@ -341,15 +360,17 @@ function FingerprintMode({
 
   useEffect(() => {
     setSupported(biometricsSupported());
-    setCount(listBiometricLinks().length);
+    fetchBiometricCredentialIds()
+      .then((ids) => setCount(ids.length))
+      .catch(() => setCount(0));
   }, []);
 
   const scan = async () => {
     setMessage(null);
     setWorking(true);
     try {
-      const { pin } = await verifyBiometric();
-      onVerified(pin);
+      const credentialId = await verifyBiometric();
+      onVerified(credentialId);
     } catch (error) {
       const code = error instanceof Error ? error.message : "error";
       setMessage(
