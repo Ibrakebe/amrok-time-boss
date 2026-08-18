@@ -14,6 +14,38 @@ export type Database = {
   }
   public: {
     Tables: {
+      employee_credentials: {
+        Row: {
+          created_at: string
+          credential_id: string
+          device_label: string
+          employee_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          credential_id: string
+          device_label?: string
+          employee_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          credential_id?: string
+          device_label?: string
+          employee_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_credentials_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
           created_at: string
@@ -99,6 +131,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_delete_credentials: {
+        Args: { p_employee_id: string }
+        Returns: number
+      }
+      admin_save_credential: {
+        Args: {
+          p_credential_id: string
+          p_device_label?: string
+          p_employee_id: string
+        }
+        Returns: string
+      }
       admin_save_employee:
         | {
             Args: {
@@ -129,6 +173,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      list_biometric_credentials: {
+        Args: never
+        Returns: {
+          credential_id: string
+        }[]
+      }
+      punch_credential: { Args: { p_credential_id: string }; Returns: Json }
       punch_pin: { Args: { p_pin: string }; Returns: Json }
     }
     Enums: {
