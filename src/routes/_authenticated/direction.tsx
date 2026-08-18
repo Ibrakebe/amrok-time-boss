@@ -37,10 +37,17 @@ import {
 } from "@/components/ui/dialog";
 import {
   biometricsSupported,
+  countBiometricsForEmployee,
   enrollBiometric,
-  hasBiometricForEmployee,
-  removeBiometricForEmployee,
+  removeBiometricsForEmployee,
 } from "@/lib/biometrics";
+import {
+  formatDate as dayLabel,
+  formatTime as hhmm,
+  hoursLabel,
+  localDay,
+  minutesBetween,
+} from "@/lib/time";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/_authenticated/direction")({
@@ -81,17 +88,11 @@ type Entry = {
   employees: { full_name: string; position: string; site: string } | null;
 };
 
-const isoDay = (d: Date) => d.toISOString().slice(0, 10);
-const hhmm = (iso: string) =>
-  new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-const dayLabel = (iso: string) =>
-  new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-const hoursLabel = (mins: number) =>
-  `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, "0")}`;
+const isoDay = (d: Date) => localDay(d);
 
 function minutesOf(entry: Entry) {
   if (!entry.clock_out) return 0;
-  return Math.max(0, Math.round((+new Date(entry.clock_out) - +new Date(entry.clock_in)) / 60000));
+  return minutesBetween(entry.clock_in, entry.clock_out);
 }
 
 function SiteBadge({ site }: { site?: string | null | undefined }) {
