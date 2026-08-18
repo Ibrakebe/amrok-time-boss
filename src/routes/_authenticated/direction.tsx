@@ -620,8 +620,8 @@ function EmployeeDialog({
                 </Label>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {bioEnrolled
-                    ? "Empreinte enrôlée sur cet appareil."
-                    : "Enrôler l'empreinte sur cet appareil de pointage."}
+                    ? `${bioCount} empreinte(s) enregistrée(s) en base pour cet employé.`
+                    : "Enrôler l'empreinte de l'employé sur cette borne (enregistrée en base)."}
                 </p>
               </div>
               <Switch
@@ -636,10 +636,9 @@ function EmployeeDialog({
                 Cet appareil ne dispose pas de lecteur d'empreinte compatible.
               </p>
             )}
-            {bioSupported && enrollBio && pin.length < 4 && (
+            {bioSupported && enrollBio && (
               <p className="text-xs text-muted-foreground">
-                Saisissez le code PIN ci-dessus : l'empreinte y sera associée lors de
-                l'enregistrement.
+                L'employé devra poser son doigt sur cet appareil lors de l'enregistrement.
               </p>
             )}
             {bioEnrolled && employee && (
@@ -647,13 +646,19 @@ function EmployeeDialog({
                 type="button"
                 variant="ghost"
                 className="h-9 w-full rounded-xl text-xs text-muted-foreground"
-                onClick={() => {
-                  removeBiometricForEmployee(employee.id);
-                  setBioEnrolled(false);
-                  toast.success("Empreinte retirée de cet appareil");
+                onClick={async () => {
+                  try {
+                    await removeBiometricsForEmployee(employee.id);
+                    setBioCount(0);
+                    toast.success("Empreintes supprimées");
+                  } catch (error) {
+                    toast.error("Suppression impossible", {
+                      description: error instanceof Error ? error.message : undefined,
+                    });
+                  }
                 }}
               >
-                <Trash2 className="mr-1 size-3.5" /> Retirer l'empreinte de cet appareil
+                <Trash2 className="mr-1 size-3.5" /> Supprimer les empreintes de cet employé
               </Button>
             )}
           </div>
