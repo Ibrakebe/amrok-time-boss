@@ -4,7 +4,12 @@
 
 const STORE_KEY = "amrok.biometrics.v1";
 
-type BioLink = { credentialId: string; pin: string; label: string; employeeId?: string | undefined };
+type BioLink = {
+  credentialId: string;
+  pin: string;
+  label: string;
+  employeeId?: string | undefined;
+};
 
 function b64url(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
