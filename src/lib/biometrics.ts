@@ -1,10 +1,9 @@
 // Empreinte digitale : WebAuthn (authentificateur de la plateforme).
-// Le lien empreinte ⇄ code PIN est stocké uniquement sur l'appareil (borne),
-// jamais envoyé au serveur : le pointage réutilise ensuite la fonction PIN.
+// L'identifiant de l'empreinte (credential id) est désormais enregistré dans la
+// base de données et rattaché à l'employé : plus aucun code PIN n'est stocké
+// sur l'appareil. Le pointage se fait via la fonction `punch_credential`.
 
-const STORE_KEY = "amrok.biometrics.v1";
-
-type BioLink = { credentialId: string; pin: string; label: string; employeeId?: string | undefined };
+import { supabase } from "@/integrations/supabase/client";
 
 function b64url(buf: ArrayBuffer) {
   const bytes = new Uint8Array(buf);
@@ -35,34 +34,32 @@ export function biometricsSupported() {
   );
 }
 
-export function listBiometricLinks(): BioLink[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORE_KEY);
-    return raw ? (JSON.parse(raw) as BioLink[]) : [];
-  } catch {
-    return [];
-  }
+/** Identifiants d'empreintes enregistrés en base (employés actifs). */
+export async function fetchBiometricCredentialIds(): Promise<string[]> {
+  const { data, error } = await supabase.rpc("list_biometric_credentials");
+  if (error) throw error;
+  return ((data ?? []) as { credential_id: string }[]).map((r) => r.credential_id);
 }
 
-function saveLinks(links: BioLink[]) {
-  window.localStorage.setItem(STORE_KEY, JSON.stringify(links));
+/** Nombre d'empreintes enrôlées pour un employé (lecture direction). */
+export async function countBiometricsForEmployee(employeeId: string) {
+  const { count, error } = await supabase
+    .from("employee_credentials")
+    .select("id", { count: "exact", head: true })
+    .eq("employee_id", employeeId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
-export function removeAllBiometricLinks() {
-  window.localStorage.removeItem(STORE_KEY);
+export async function removeBiometricsForEmployee(employeeId: string) {
+  const { error } = await supabase.rpc("admin_delete_credentials", {
+    p_employee_id: employeeId,
+  });
+  if (error) throw error;
 }
 
-export function hasBiometricForEmployee(employeeId: string) {
-  return listBiometricLinks().some((l) => l.employeeId === employeeId);
-}
-
-export function removeBiometricForEmployee(employeeId: string) {
-  saveLinks(listBiometricLinks().filter((l) => l.employeeId !== employeeId));
-}
-
-/** Enrôle une empreinte sur cet appareil et l'associe à un code PIN. */
-export async function enrollBiometric(pin: string, label: string, employeeId?: string) {
+/** Enrôle une empreinte sur cet appareil et l'enregistre en base pour l'employé. */
+export async function enrollBiometric(employeeId: string, label: string) {
   const credential = (await navigator.credentials.create({
     publicKey: {
       challenge: randomBytes(32),
@@ -85,25 +82,26 @@ export async function enrollBiometric(pin: string, label: string, employeeId?: s
   if (!credential) throw new Error("cancelled");
 
   const credentialId = b64url(credential.rawId);
-  const links = listBiometricLinks().filter(
-    (l) => l.credentialId !== credentialId && (!employeeId || l.employeeId !== employeeId),
-  );
-  links.push({ credentialId, pin, label, employeeId });
-  saveLinks(links);
+  const { error } = await supabase.rpc("admin_save_credential", {
+    p_employee_id: employeeId,
+    p_credential_id: credentialId,
+    p_device_label: navigator.userAgent.slice(0, 80),
+  });
+  if (error) throw error;
   return credentialId;
 }
 
-/** Vérifie l'empreinte et retourne le PIN associé. */
-export async function verifyBiometric(): Promise<{ pin: string; label: string }> {
-  const links = listBiometricLinks();
-  if (links.length === 0) throw new Error("no_enrollment");
+/** Vérifie l'empreinte et retourne l'identifiant reconnu. */
+export async function verifyBiometric(): Promise<string> {
+  const ids = await fetchBiometricCredentialIds();
+  if (ids.length === 0) throw new Error("no_enrollment");
 
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: randomBytes(32),
-      allowCredentials: links.map((l) => ({
+      allowCredentials: ids.map((id) => ({
         type: "public-key" as const,
-        id: fromB64url(l.credentialId),
+        id: fromB64url(id),
       })),
       userVerification: "required",
       timeout: 60000,
@@ -112,7 +110,6 @@ export async function verifyBiometric(): Promise<{ pin: string; label: string }>
 
   if (!assertion) throw new Error("cancelled");
   const id = b64url(assertion.rawId);
-  const match = links.find((l) => l.credentialId === id);
-  if (!match) throw new Error("unknown_credential");
-  return { pin: match.pin, label: match.label };
+  if (!ids.includes(id)) throw new Error("unknown_credential");
+  return id;
 }
