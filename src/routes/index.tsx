@@ -14,7 +14,12 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { biometricsSupported, listBiometricLinks, verifyBiometric } from "@/lib/biometrics";
+import {
+  biometricsSupported,
+  fetchBiometricCredentialIds,
+  verifyBiometric,
+} from "@/lib/biometrics";
+import { APP_TIME_ZONE, formatTime, hoursLabel, minutesBetween } from "@/lib/time";
 import logo from "@/assets/amrok-logo.png";
 
 export const Route = createFileRoute("/")({
